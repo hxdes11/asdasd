@@ -1,0 +1,87 @@
+# ==========================================================
+# PROJECT: CMD ULTRA - ULTIMATE SUCCESS VERSION
+# ==========================================================
+
+try {
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+        $ArgList = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+        Start-Process powershell -ArgumentList $ArgList -Verb RunAs; exit
+    }
+
+    $Source = @"
+    using System;
+    using System.Runtime.InteropServices;
+    public class GhostBypass {
+        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint dwAccess, bool bInherit, int dwPid);
+        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBase, byte[] lpBuffer, int nSize, out int lpWritten);
+        [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBase, byte[] lpBuffer, int nSize, out int lpRead);
+
+        public static IntPtr ScanPattern(IntPtr hProcess, byte[] pattern) {
+            // ช่วงสแกนมาตรฐานที่ครอบคลุมค่าฟิสิกส์
+            long start = 0x140000000; 
+            long end = 0x350000000; 
+            byte[] buffer = new byte[8192576]; // 8MB Buffer เพื่อความชัวร์
+            int read;
+            for (long i = start; i < end; i += buffer.Length - pattern.Length) {
+                if (ReadProcessMemory(hProcess, (IntPtr)i, buffer, buffer.Length, out read)) {
+                    for (int j = 0; j < read - pattern.Length; j++) {
+                        bool match = true;
+                        for (int k = 0; k < pattern.Length; k++) {
+                            if (buffer[j + k] != pattern[k]) { match = false; break; }
+                        }
+                        if (match) return (IntPtr)(i + j);
+                    }
+                }
+            }
+            return IntPtr.Zero;
+        }
+    }
+"@
+    Add-Type -TypeDefinition $Source
+
+    # CONFIG & VALUES (ปรับชุดสแกนให้สั้นลงเพื่อความแม่นยำ 100%)
+    # เราใช้เฉพาะส่วนหัว 8 bytes แรกในการระบุตำแหน่ง
+    $PATTERN_SCAN = [byte[]](0x00,0x00,0x00,0x00,0xCD,0xCC,0x9C,0x40) 
+    
+    # ค่าที่จะฉีด (รวมค่า High/Low แบบเต็มรูปแบบ)
+    $VAL_HIGH     = [byte[]](0x92,0xC2,0xF5,0xBC,0x29,0x5C,0xA7,0x40,0x00,0x00,0x20,0x41,0x00,0x00,0x48,0x41)
+    $VAL_LOW      = [byte[]](0x0A,0xD7,0xA3,0xBC,0xD7,0xA3,0xA0,0x40,0x00,0x00,0x20,0x41,0x00,0x00,0x48,0x41)
+
+    cls
+    Write-Host "----------------------------------------------------" -f Cyan
+    Write-Host "          CMD ULTRA : 100% SUCCESS VERSION          " -f Magenta
+    Write-Host "----------------------------------------------------" -f Cyan
+    
+    Write-Host "[1] MODE: HIGH  [2] MODE: LOW" -f Yellow
+    $Choice = Read-Host "SELECT"
+    $FinalData = if ($Choice -eq "1") { $VAL_HIGH } else { $VAL_LOW }
+
+    Write-Host "`n[*] STATUS: ATTACHING TO GAME..." -f White
+    $Game = Get-Process | Where-Object { $_.ProcessName -like "*FiveM*" -or $_.ProcessName -like "*GTAProcess*" } | Select-Object -First 1
+
+    if ($Game) {
+        $Handle = [GhostBypass]::OpenProcess(0x1F0FFF, $false, $Game.Id)
+        Write-Host "[*] STATUS: STARTING SMART SCAN..." -f Magenta
+        
+        $Address = [GhostBypass]::ScanPattern($Handle, $PATTERN_SCAN)
+
+        if ($Address -ne [IntPtr]::Zero) {
+            Write-Host "[+] STATUS: PATTERN MATCHED! (0x$($Address.ToString("X")))" -f Green
+            $Written = 0
+            if ([GhostBypass]::WriteProcessMemory($Handle, $Address, $FinalData, $FinalData.Length, [ref]$Written)) {
+                [Console]::Beep(1200, 400)
+                Write-Host "[SUCCESS] CMD ULTRA IS NOW ACTIVE!" -f Cyan
+            }
+        } else {
+            Write-Host "[-] ERROR: STILL NOT FOUND! (RE-LOG AND TRY AGAIN)" -f Red
+        }
+    } else {
+        Write-Host "[-] ERROR: GAME NOT DETECTED!" -f Red
+    }
+
+} catch {
+    Write-Host "[!] ERROR: $($_.Exception.Message)" -f Red
+}
+
+Write-Host "`n----------------------------------------------------" -f Cyan
+Read-Host "PRESS ENTER TO EXIT"
