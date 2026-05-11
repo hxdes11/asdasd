@@ -1,0 +1,89 @@
+# ==========================================================
+# PROJECT: CMD ULTRA - FINAL HOPE (DEEP SCAN)
+# ==========================================================
+
+try {
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+        $ArgList = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+        Start-Process powershell -ArgumentList $ArgList -Verb RunAs; exit
+    }
+
+    $DynamicName = "GhostFinal_" + (Get-Random -Minimum 1000 -Maximum 9999)
+    $Source = @"
+    using System;
+    using System.Runtime.InteropServices;
+    public class $DynamicName {
+        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint dwAccess, bool bInherit, int dwPid);
+        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBase, byte[] lpBuffer, int nSize, out int lpWritten);
+        [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBase, byte[] lpBuffer, int nSize, out int lpRead);
+
+        public static IntPtr ScanPattern(IntPtr hProcess, byte[] pattern) {
+            // สแกนตั้งแต่ช่วงต้นจนถึงเกือบสุดท้ายของ RAM
+            long start = 0x100000000; 
+            long end = 0x500000000; 
+            byte[] buffer = new byte[10485760]; // 10MB Buffer
+            int read;
+            for (long i = start; i < end; i += buffer.Length - pattern.Length) {
+                if (ReadProcessMemory(hProcess, (IntPtr)i, buffer, buffer.Length, out read)) {
+                    for (int j = 0; j < read - pattern.Length; j++) {
+                        bool match = true;
+                        for (int k = 0; k < pattern.Length; k++) {
+                            if (buffer[j + k] != pattern[k]) { match = false; break; }
+                        }
+                        if (match) return (IntPtr)(i + j);
+                    }
+                }
+            }
+            return IntPtr.Zero;
+        }
+    }
+"@
+    Add-Type -TypeDefinition $Source
+
+    # ปรับชุดสแกนให้เหลือแค่ส่วนที่ "ตายตัว" ที่สุด (CD CC 9C 40)
+    $PATTERN_SCAN = [byte[]](0xCD,0xCC,0x9C,0x40) 
+    
+    $VAL_HIGH     = [byte[]](0x92,0xC2,0xF5,0xBC,0x29,0x5C,0xA7,0x40,0x00,0x00,0x20,0x41,0x00,0x00,0x48,0x41)
+    $VAL_LOW      = [byte[]](0x0A,0xD7,0xA3,0xBC,0xD7,0xA3,0xA0,0x40,0x00,0x00,0x20,0x41,0x00,0x00,0x48,0x41)
+
+    cls
+    Write-Host "----------------------------------------------------" -f Cyan
+    Write-Host "          CMD ULTRA : FINAL DEEP SCAN               " -f Magenta
+    Write-Host "----------------------------------------------------" -f Cyan
+    
+    Write-Host "[1] HIGH  [2] LOW" -f Yellow
+    $Choice = Read-Host "SELECT"
+    $FinalData = if ($Choice -eq "1") { $VAL_HIGH } else { $VAL_LOW }
+
+    $Game = Get-Process | Where-Object { $_.ProcessName -like "*FiveM*" -or $_.ProcessName -like "*GTAProcess*" } | Select-Object -First 1
+
+    if ($Game) {
+        $Handle = [$DynamicName]::OpenProcess(0x1F0FFF, $false, $Game.Id)
+        Write-Host "[*] STATUS: DEEP SCANNING RAM (1.0GB - 5.0GB)..." -f Magenta
+        
+        $Address = [$DynamicName]::ScanPattern($Handle, $PATTERN_SCAN)
+
+        if ($Address -ne [IntPtr]::Zero) {
+            Write-Host "[+] STATUS: PATTERN FOUND! AT 0x$($Address.ToString("X"))" -f Green
+            $Written = 0
+            # ถอยหลังกลับไป 4 bytes เพื่อให้จุดเริ่มต้นตรงกับ 00 00 00 00 เดิม
+            $RealAddress = [IntPtr]($Address.ToInt64() - 4)
+            
+            if ([$DynamicName]::WriteProcessMemory($Handle, $RealAddress, $FinalData, $FinalData.Length, [ref]$Written)) {
+                [Console]::Beep(1200, 500)
+                Write-Host "[SUCCESS] CMD ULTRA IS ACTIVE!" -f Cyan
+            }
+        } else {
+            Write-Host "[-] ERROR: DATA NOT FOUND IN RAM!" -f Red
+            Write-Host "[!] ปัญหา: เซิร์ฟเวอร์นี้อาจจะมีการเข้ารหัสค่าฟิสิกส์ หรือใช้ Build ที่ต่างออกไป" -f Yellow
+        }
+    } else {
+        Write-Host "[-] ERROR: GAME NOT FOUND!" -f Red
+    }
+
+} catch {
+    Write-Host "[!] ERROR: $($_.Exception.Message)" -f Red
+}
+
+Write-Host "`n----------------------------------------------------" -f Cyan
+Read-Host "PRESS ENTER TO EXIT"
