@@ -1,0 +1,82 @@
+# ==========================================================
+# PROJECT: CMD ULTRA - ULTIMATE FIXED
+# STATUS: NO SERVER CHECK | DYNAMIC CLASS | SMART SCAN
+# ==========================================================
+
+try {
+    # [1] FORCE ADMIN
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+        Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs; exit
+    }
+
+    # [2] STABLE ENGINE (Dynamic Name to fix "Already Exists" error)
+    $EngineName = "GhostEngine_" + (Get-Random -Max 9999)
+    $Source = @"
+    using System;
+    using System.Runtime.InteropServices;
+    public class $EngineName {
+        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint dwAccess, bool bInherit, int dwPid);
+        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBase, byte[] lpBuffer, int nSize, out int lpWritten);
+        [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBase, byte[] lpBuffer, int nSize, out int lpRead);
+
+        public static IntPtr Scan(IntPtr hProc, byte[] p) {
+            long start = 0x140000000; long end = 0x450000000; 
+            byte[] b = new byte[10485760]; int r;
+            for (long i = start; i < end; i += b.Length - p.Length) {
+                if (ReadProcessMemory(hProc, (IntPtr)i, b, b.Length, out r)) {
+                    for (int j = 0; j < r - p.Length; j++) {
+                        bool m = true;
+                        for (int k = 0; k < p.Length; k++) { if (b[j + k] != p[k]) { m = false; break; } }
+                        if (m) return (IntPtr)(i + j);
+                    }
+                }
+            }
+            return IntPtr.Zero;
+        }
+    }
+"@
+    Add-Type -TypeDefinition $Source
+
+    # [3] CONFIG (ใช้ชุดสแกนที่เสถียรที่สุด)
+    $P_SCAN = [byte[]](0xCD,0xCC,0x9C,0x40)
+    $V_HIGH = [byte[]](0x92,0xC2,0xF5,0xBC,0x29,0x5C,0xA7,0x40,0x00,0x00,0x20,0x41,0x00,0x00,0x48,0x41)
+    $V_LOW  = [byte[]](0x0A,0xD7,0xA3,0xBC,0xD7,0xA3,0xA0,0x40,0x00,0x00,0x20,0x41,0x00,0x00,0x48,0x41)
+
+    cls
+    Write-Host "----------------------------------------------------" -f Cyan
+    Write-Host "          CMD ULTRA : ULTIMATE FIXED READY          " -f Magenta
+    Write-Host "----------------------------------------------------" -f Cyan
+    Write-Host "[1] ULTRA HIGH  [2] ULTRA LOW" -f Yellow
+    $Mode = Read-Host "SELECT"
+    $Data = if ($Mode -eq "1") { $V_HIGH } else { $V_LOW }
+
+    # [4] START PROCESS
+    Write-Host "`n[*] ATTACHING TO GAME..." -f White
+    $Proc = Get-Process | Where-Object { $_.ProcessName -like "*FiveM*" -or $_.ProcessName -like "*GTAProcess*" } | Select-Object -First 1
+
+    if ($Proc) {
+        $Handle = [$EngineName]::OpenProcess(0x1F0FFF, $false, $Proc.Id)
+        Write-Host "[*] DEEP SCANNING RAM (PLEASE WAIT)..." -f Magenta
+        $Addr = [$EngineName]::Scan($Handle, $P_SCAN)
+
+        if ($Addr -ne [IntPtr]::Zero) {
+            Write-Host "[+] SUCCESS: TARGET LOCATED!" -f Green
+            $Written = 0
+            $RealAddr = [IntPtr]($Addr.ToInt64() - 4) # Adjust to start of physics block
+            if ([$EngineName]::WriteProcessMemory($Handle, $RealAddr, $Data, $Data.Length, [ref]$Written)) {
+                [Console]::Beep(1200, 500)
+                Write-Host "[SUCCESS] CMD ULTRA IS NOW ACTIVE!" -f Cyan
+            }
+        } else {
+            Write-Host "[-] ERROR: PATTERN NOT FOUND! (RE-LOG AND TRY AGAIN)" -f Red
+        }
+    } else {
+        Write-Host "[-] ERROR: GAME NOT FOUND!" -f Red
+    }
+
+} catch {
+    Write-Host "[!] ERROR: $($_.Exception.Message)" -f Red
+}
+
+Write-Host "`n----------------------------------------------------" -f Cyan
+Read-Host "PRESS ENTER TO EXIT"
