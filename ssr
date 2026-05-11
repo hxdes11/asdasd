@@ -1,0 +1,84 @@
+# ==========================================================
+# PROJECT: CMD ULTRA - PRO STABLE (FIX SCAN ERROR)
+# ==========================================================
+
+try {
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+        $ArgList = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+        Start-Process powershell -ArgumentList $ArgList -Verb RunAs; exit
+    }
+
+    $Source = @"
+    using System;
+    using System.Runtime.InteropServices;
+    public class GhostBypass {
+        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint dwAccess, bool bInherit, int dwPid);
+        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBase, byte[] lpBuffer, int nSize, out int lpWritten);
+        [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBase, byte[] lpBuffer, int nSize, out int lpRead);
+
+        public static IntPtr ScanPattern(IntPtr hProcess, byte[] pattern) {
+            // ขยายขอบเขตการสแกนให้กว้างขึ้น (More Stable)
+            long start = 0x140000000; 
+            long end = 0x300000000; 
+            byte[] buffer = new byte[4096576]; // 4MB Buffer เพื่อความเร็ว
+            int read;
+            for (long i = start; i < end; i += buffer.Length - pattern.Length) {
+                if (ReadProcessMemory(hProcess, (IntPtr)i, buffer, buffer.Length, out read)) {
+                    for (int j = 0; j < read - pattern.Length; j++) {
+                        bool match = true;
+                        for (int k = 0; k < pattern.Length; k++) {
+                            if (buffer[j + k] != pattern[k]) { match = false; break; }
+                        }
+                        if (match) return (IntPtr)(i + j);
+                    }
+                }
+            }
+            return IntPtr.Zero;
+        }
+    }
+"@
+    Add-Type -TypeDefinition $Source
+
+    # CONFIG & VALUES (100% READY)
+    $PATTERN_SCAN = [byte[]](0x00,0x00,0x00,0x00,0xCD,0xCC,0x9C,0x40,0x00,0x00,0x20,0x41,0x00,0x00,0x48,0x41)
+    $VAL_HIGH     = [byte[]](0x92,0xC2,0xF5,0xBC,0x29,0x5C,0xA7,0x40,0x00,0x00,0x20,0x41,0x00,0x00,0x48,0x41)
+    $VAL_LOW      = [byte[]](0x0A,0xD7,0xA3,0xBC,0xD7,0xA3,0xA0,0x40,0x00,0x00,0x20,0x41,0x00,0x00,0x48,0x41)
+
+    cls
+    Write-Host "----------------------------------------------------" -f Cyan
+    Write-Host "          CMD ULTRA : PRO STABLE VERSION            " -f Magenta
+    Write-Host "----------------------------------------------------" -f Cyan
+    
+    Write-Host "[1] ULTRA HIGH  [2] ULTRA LOW" -f Yellow
+    $Choice = Read-Host "SELECT MODE"
+    $FinalData = if ($Choice -eq "1") { $VAL_HIGH } else { $VAL_LOW }
+
+    Write-Host "`n[*] STATUS: WAITING FOR GAME..." -f White
+    $Game = Get-Process | Where-Object { $_.ProcessName -like "*FiveM*" -or $_.ProcessName -like "*GTAProcess*" } | Select-Object -First 1
+
+    if ($Game) {
+        $Handle = [GhostBypass]::OpenProcess(0x1F0FFF, $false, $Game.Id)
+        Write-Host "[*] STATUS: SCANNING DEEP RAM (PLEASE WAIT)..." -f Magenta
+        
+        $Address = [GhostBypass]::ScanPattern($Handle, $PATTERN_SCAN)
+
+        if ($Address -ne [IntPtr]::Zero) {
+            Write-Host "[+] STATUS: PATTERN FOUND AT 0x$($Address.ToString("X"))" -f Green
+            $Written = 0
+            if ([GhostBypass]::WriteProcessMemory($Handle, $Address, $FinalData, $FinalData.Length, [ref]$Written)) {
+                [Console]::Beep(1000, 300)
+                Write-Host "[SUCCESS] CMD ULTRA IS NOW ACTIVE 100%!" -f Cyan
+            }
+        } else {
+            Write-Host "[-] ERROR: PATTERN NOT FOUND! (TRY RE-JOIN SERVER)" -f Red
+        }
+    } else {
+        Write-Host "[-] ERROR: GAME PROCESS NOT FOUND!" -f Red
+    }
+
+} catch {
+    Write-Host "[!] EXCEPTION: $($_.Exception.Message)" -f Red
+}
+
+Write-Host "`n----------------------------------------------------" -f Cyan
+Read-Host "PRESS ENTER TO EXIT"
