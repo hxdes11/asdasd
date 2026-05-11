@@ -1,0 +1,85 @@
+# ==========================================================
+# PROJECT: CMD ULTRA - ULTIMATE BYPASS
+# STATUS: NO HWID CHECK | NO SERVER | 100% SUCCESS TARGETED
+# ==========================================================
+
+try {
+    # [1] PRIVILEGE ESCALATION
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+        Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs; exit
+    }
+
+    # [2] HIGH-PERFORMANCE MEMORY ENGINE
+    $DynamicEngine = "Engine_" + (Get-Random -Max 9999)
+    $Source = @"
+    using System;
+    using System.Runtime.InteropServices;
+    public class $DynamicEngine {
+        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint dwAccess, bool bInherit, int dwPid);
+        [DllImport("kernel32.dll")] public static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBase, byte[] lpBuffer, int nSize, out int lpWritten);
+        [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBase, byte[] lpBuffer, int nSize, out int lpRead);
+
+        public static IntPtr ScanPattern(IntPtr hProcess, byte[] pattern) {
+            long start = 0x140000000; long end = 0x400000000;
+            byte[] buffer = new byte[10485760]; int read;
+            for (long i = start; i < end; i += buffer.Length - pattern.Length) {
+                if (ReadProcessMemory(hProcess, (IntPtr)i, buffer, buffer.Length, out read)) {
+                    for (int j = 0; j < read - pattern.Length; j++) {
+                        bool match = true;
+                        for (int k = 0; k < pattern.Length; k++) {
+                            if (buffer[j + k] != pattern[k]) { match = false; break; }
+                        }
+                        if (match) return (IntPtr)(i + j);
+                    }
+                }
+            }
+            return IntPtr.Zero;
+        }
+    }
+"@
+    Add-Type -TypeDefinition $Source
+
+    # [3] DATA CONFIGURATION
+    # ปรับ Pattern ให้สั้นลงเพื่อความแม่นยำสูงสุด (ป้องกัน Pattern Not Found)
+    $P_SCAN = [byte[]](0xCD,0xCC,0x9C,0x40)
+    $V_HIGH = [byte[]](0x92,0xC2,0xF5,0xBC,0x29,0x5C,0xA7,0x40,0x00,0x00,0x20,0x41,0x00,0x00,0x48,0x41)
+    $V_LOW  = [byte[]](0x0A,0xD7,0xA3,0xBC,0xD7,0xA3,0xA0,0x40,0x00,0x00,0x20,0x41,0x00,0x00,0x48,0x41)
+
+    cls
+    Write-Host "----------------------------------------------------" -f Cyan
+    Write-Host "          CMD ULTRA : BYPASS SUCCESS 100%           " -f Magenta
+    Write-Host "----------------------------------------------------" -f Cyan
+    Write-Host "[1] MODE: ULTRA HIGH  [2] MODE: ULTRA LOW" -f Yellow
+    $Input = Read-Host "SELECT"
+    $FinalData = if ($Input -eq "1") { $V_HIGH } else { $V_LOW }
+
+    # [4] SEARCH & INJECT
+    Write-Host "`n[*] LOOKING FOR GAME..." -f White
+    $Game = Get-Process | Where-Object { $_.ProcessName -like "*FiveM*" -or $_.ProcessName -like "*GTAProcess*" } | Select-Object -First 1
+
+    if ($Game) {
+        $Handle = [$DynamicEngine]::OpenProcess(0x1F0FFF, $false, $Game.Id)
+        Write-Host "[*] SMART SCANNING RAM..." -f Magenta
+        $Address = [$DynamicEngine]::ScanPattern($Handle, $P_SCAN)
+
+        if ($Address -ne [IntPtr]::Zero) {
+            Write-Host "[+] TARGET FOUND AT 0x$($Address.ToString("X"))" -f Green
+            $Written = 0
+            $RealAddr = [IntPtr]($Address.ToInt64() - 4)
+            if ([$DynamicEngine]::WriteProcessMemory($Handle, $RealAddr, $FinalData, $FinalData.Length, [ref]$Written)) {
+                [Console]::Beep(1000, 400)
+                Write-Host "[SUCCESS] CMD ULTRA IS ACTIVE!" -f Cyan
+            }
+        } else {
+            Write-Host "[-] ERROR: PATTERN NOT FOUND (STILL LOADING?)" -f Red
+        }
+    } else {
+        Write-Host "[-] ERROR: GAME NOT DETECTED" -f Red
+    }
+
+} catch {
+    Write-Host "[!] CRITICAL ERROR: $($_.Exception.Message)" -f Red
+}
+
+Write-Host "`n----------------------------------------------------" -f Cyan
+Read-Host "PRESS ENTER TO EXIT"
